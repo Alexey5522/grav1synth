@@ -16,12 +16,38 @@ jobs:
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
 
-      # Исправлено имя экшена (BtbN/action-ffmpeg)
-      - name: Set up FFmpeg
-        uses: BtbN/action-ffmpeg@v5
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          arch: win64
+      - name: Download and extract FFmpeg (BtbN builds)
+        shell: pwsh
+        run: |
+          # Используем стабильную прямую ссылку на последнюю сборку с заголовками (dev) под Windows
+          $url = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n7.1-latest-win64-gpl-shared-7.1.zip"
+          # Если эта конкретная версия со временем сместится, можно взять универсальный latest через GitHub API, 
+          # но проще скачать по прямой стабильной ссылке последних релизов:
+          $url = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl-shared-7.1.zip"
+          
+          # Давай сделаем универсально: скачаем через curl/powershell последнююлинкованную сборку win64-gpl
+          $releasesUrl = "https://api.github.com/repos/BtbN/FFmpeg-Builds/releases/latest"
+          Write-Host "Fetching latest FFmpeg release info..."
+          $response = Invoke-RestMethod -Uri $releasesUrl
+          $asset = $response.assets | Where-Object { $_.name -like "*win64-gpl-shared*.zip" } | Select-Object -First 1
+          
+          if (-not $asset) {
+              # Запасной вариант прямой ссылки, если API ограничит запросы
+              $downloadUrl = "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2024-10-15-1250/ffmpeg-n7.1-13-g51f33fef57-win64-gpl-shared-7.1.zip"
+          } else {
+              $downloadUrl = $asset.browser_download_url
+          }
+
+          Write-Host "Downloading from: $downloadUrl"
+          $output = "$env:TEMP\ffmpeg.zip"
+          Invoke-WebRequest -Uri $downloadUrl -OutFile $output
+          
+          Write-Host "Extracting FFmpeg..."
+          Expand-Archive -Path $output -DestinationPath "$env:TEMP\ffmpeg"
+          $ffmpegFolder = Get-ChildItem "$env:TEMP\ffmpeg" | Where-Object { $_.PSIsContainer } | Select-Object -First 1
+          
+          echo "FFMPEG_DIR=$($ffmpegFolder.FullName)" >> $env:GITHUB_ENV
+          echo "$($ffmpegFolder.FullName)\bin" >> $env:GITHUB_PATH
 
       - name: Build release binary
         run: cargo build --release
@@ -32,10 +58,8 @@ jobs:
           mkdir dist
           Copy-Item target\release\grav1synth.exe dist\
           
-          # Находим путь к FFmpeg и копируем нужные DLL-файлы рядом с exe
-          $ffmpegPath = (Get-Command ffmpeg).Source
-          $ffmpegBin = Split-Path $ffmpegPath -Parent
-          
+          # Копируем DLL-библиотеки FFmpeg рядом с exe для портативности
+          $ffmpegBin = "$env:FFMPEG_DIR\bin"
           Copy-Item "$ffmpegBin\avcodec-*.dll" dist\
           Copy-Item "$ffmpegBin\avformat-*.dll" dist\
           Copy-Item "$ffmpegBin\avutil-*.dll" dist\
