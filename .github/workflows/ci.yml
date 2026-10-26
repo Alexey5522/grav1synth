@@ -1,46 +1,53 @@
-# Validate PRs and pushes to main without secrets or write access.
-# Pin Ubuntu for a known-compatible system FFmpeg version.
-name: CI
+name: Build Windows Binary
 
 on:
   push:
-    branches: [main]
-  pull_request:
-    branches: [main]
-
-permissions: {}
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
-  cancel-in-progress: true
+    branches: [ main, master ]
+  workflow_dispatch: # Позволяет запускать сборку вручную кнопкой на сайте
 
 jobs:
-  check:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    permissions:
-      contents: read
+  build:
+    runs-on: windows-latest
+
     steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Download and extract FFmpeg
+        shell: pwsh
+        run: |
+          $url = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
+          $output = "$env:TEMP\ffmpeg.zip"
+          Write-Host "Downloading FFmpeg..."
+          Invoke-WebRequest -Uri $url -OutFile $output
+          Write-Host "Extracting FFmpeg..."
+          Expand-Archive -Path $output -DestinationPath "$env:TEMP\ffmpeg"
+          $ffmpegFolder = Get-ChildItem "$env:TEMP\ffmpeg" | Where-Object { $_.PSIsContainer } | Select-Object -First 1
+          echo "FFMPEG_DIR=$($ffmpegFolder.FullName)" >> $env:GITHUB_ENV
+          echo "$($ffmpegFolder.FullName)\bin" >> $env:GITHUB_PATH
+
+      - name: Build release binary
+        run: cargo build --release
+
+      - name: Prepare portable folder
+        shell: pwsh
+        run: |
+          mkdir dist
+          Copy-Item target\release\grav1synth.exe dist\
+          
+          # Копируем DLL-библиотеки FFmpeg рядом с exe, чтобы получилось портативно
+          $ffmpegBin = "$env:FFMPEG_DIR\bin"
+          Copy-Item "$ffmpegBin\avcodec-*.dll" dist\
+          Copy-Item "$ffmpegBin\avformat-*.dll" dist\
+          Copy-Item "$ffmpegBin\avutil-*.dll" dist\
+          Copy-Item "$ffmpegBin\swscale-*.dll" dist\
+          Copy-Item "$ffmpegBin\swresample-*.dll" dist\
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
         with:
-          persist-credentials: false
-
-      - name: Install stable Rust
-        run: |
-          rustup toolchain install stable --profile minimal --component rustfmt --component clippy
-          rustup default stable
-
-      - name: Check formatting
-        run: cargo fmt --all -- --check
-
-      - name: Install native dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends pkg-config libclang-dev libavformat-dev
-
-      - name: Clippy
-        run: cargo clippy --locked -- -D warnings
-
-      - name: Unit tests
-        run: cargo test --locked
+          name: grav1synth-windows-portable
+          path: dist/
