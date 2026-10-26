@@ -3,7 +3,7 @@ name: Build Windows Binary
 on:
   push:
     branches: [ main, master ]
-  workflow_dispatch: # Позволяет запускать сборку вручную кнопкой на сайте
+  workflow_dispatch:
 
 jobs:
   build:
@@ -16,16 +16,18 @@ jobs:
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Download and extract FFmpeg
+      - name: Download and extract FFmpeg Dev
         shell: pwsh
         run: |
-          $url = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
+          $url = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-dev.zip"
           $output = "$env:TEMP\ffmpeg.zip"
-          Write-Host "Downloading FFmpeg..."
+          Write-Host "Downloading FFmpeg Dev build..."
           Invoke-WebRequest -Uri $url -OutFile $output
           Write-Host "Extracting FFmpeg..."
           Expand-Archive -Path $output -DestinationPath "$env:TEMP\ffmpeg"
           $ffmpegFolder = Get-ChildItem "$env:TEMP\ffmpeg" | Where-Object { $_.PSIsContainer } | Select-Object -First 1
+          
+          # Указываем FFMPEG_DIR на распакованную папку, где есть include и lib
           echo "FFMPEG_DIR=$($ffmpegFolder.FullName)" >> $env:GITHUB_ENV
           echo "$($ffmpegFolder.FullName)\bin" >> $env:GITHUB_PATH
 
@@ -38,7 +40,7 @@ jobs:
           mkdir dist
           Copy-Item target\release\grav1synth.exe dist\
           
-          # Копируем DLL-библиотеки FFmpeg рядом с exe, чтобы получилось портативно
+          # Копируем DLL-библиотеки FFmpeg рядом с exe для портативности
           $ffmpegBin = "$env:FFMPEG_DIR\bin"
           Copy-Item "$ffmpegBin\avcodec-*.dll" dist\
           Copy-Item "$ffmpegBin\avformat-*.dll" dist\
