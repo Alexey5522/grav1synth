@@ -16,20 +16,12 @@ jobs:
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Download and extract FFmpeg Dev
-        shell: pwsh
-        run: |
-          $url = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-dev.zip"
-          $output = "$env:TEMP\ffmpeg.zip"
-          Write-Host "Downloading FFmpeg Dev build..."
-          Invoke-WebRequest -Uri $url -OutFile $output
-          Write-Host "Extracting FFmpeg..."
-          Expand-Archive -Path $output -DestinationPath "$env:TEMP\ffmpeg"
-          $ffmpegFolder = Get-ChildItem "$env:TEMP\ffmpeg" | Where-Object { $_.PSIsContainer } | Select-Object -First 1
-          
-          # Указываем FFMPEG_DIR на распакованную папку, где есть include и lib
-          echo "FFMPEG_DIR=$($ffmpegFolder.FullName)" >> $env:GITHUB_ENV
-          echo "$($ffmpegFolder.FullName)\bin" >> $env:GITHUB_PATH
+      # Надежный способ скачать и настроить FFmpeg со всеми заголовками на Windows
+      - name: Set up FFmpeg
+        uses: BtbN/actions-ffmpeg@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          arch: win64
 
       - name: Build release binary
         run: cargo build --release
@@ -40,8 +32,10 @@ jobs:
           mkdir dist
           Copy-Item target\release\grav1synth.exe dist\
           
-          # Копируем DLL-библиотеки FFmpeg рядом с exe для портативности
-          $ffmpegBin = "$env:FFMPEG_DIR\bin"
+          # Экшен BtbN/actions-ffmpeg добавляет бинарники в PATH, найдем их для копирования DLL
+          $ffmpegPath = (Get-Command ffmpeg).Source
+          $ffmpegBin = Split-Path $ffmpegPath -Parent
+          
           Copy-Item "$ffmpegBin\avcodec-*.dll" dist\
           Copy-Item "$ffmpegBin\avformat-*.dll" dist\
           Copy-Item "$ffmpegBin\avutil-*.dll" dist\
