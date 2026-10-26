@@ -16,9 +16,9 @@ jobs:
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
 
-      # Надежный способ скачать и настроить FFmpeg со всеми заголовками на Windows
+      # Исправлено имя экшена (BtbN/action-ffmpeg)
       - name: Set up FFmpeg
-        uses: BtbN/actions-ffmpeg@v2
+        uses: BtbN/action-ffmpeg@v5
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           arch: win64
@@ -32,7 +32,7 @@ jobs:
           mkdir dist
           Copy-Item target\release\grav1synth.exe dist\
           
-          # Экшен BtbN/actions-ffmpeg добавляет бинарники в PATH, найдем их для копирования DLL
+          # Находим путь к FFmpeg и копируем нужные DLL-файлы рядом с exe
           $ffmpegPath = (Get-Command ffmpeg).Source
           $ffmpegBin = Split-Path $ffmpegPath -Parent
           
